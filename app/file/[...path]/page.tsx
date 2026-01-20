@@ -7,7 +7,7 @@ import { getPdfPages, setPdfPages } from "@/lib/cache";
 import { useFiles } from "@/lib/files-context";
 import { CELEBRITY_DATA } from "@/lib/celebrity-data";
 import { CelebrityDisclaimer } from "@/components/celebrity-disclaimer";
-
+import { cn } from "@/lib/utils";
 const WORKER_URL = process.env.NODE_ENV === "development" 
   ? "http://localhost:8787" 
   : "https://epstein-files.rhys-669.workers.dev";
@@ -89,33 +89,117 @@ function getCelebritiesForPage(filePath: string, pageNumber: number): { name: st
   return celebrities.sort((a, b) => b.confidence - a.confidence).filter(celeb => celeb.confidence > 99);
 }
 
-// Component to display a page with its celebrity info
+// Zoom levels for PDF pages
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+// Component to display a page with its celebrity info and zoom controls
 function PageWithCelebrities({ 
   dataUrl, 
   pageNumber, 
-  filePath 
+  filePath,
+  showPageNumber = true,
 }: { 
   dataUrl: string; 
   pageNumber: number; 
   filePath: string;
+  showPageNumber?: boolean;
 }) {
+  const [zoomIndex, setZoomIndex] = useState(2); // Default 100%
+  const zoom = ZOOM_LEVELS[zoomIndex];
+  const zoomPercent = Math.round(zoom * 100);
+  
+  const zoomIn = () => setZoomIndex((prev) => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
+  const zoomOut = () => setZoomIndex((prev) => Math.max(prev - 1, 0));
+  const resetZoom = () => setZoomIndex(2);
+  
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
+  const canZoomOut = zoomIndex > 0;
+  const isDefaultZoom = zoomIndex === 2;
+
   const celebrities = useMemo(() => getCelebritiesForPage(filePath, pageNumber), [filePath, pageNumber]);
   
   return (
     <div className="bg-card rounded-2xl shadow-xl overflow-hidden border border-border">
       <div className="relative">
-        {/* Page number badge */}
-        <div className="absolute top-3 left-3 px-2.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg text-xs font-medium text-muted-foreground border border-border">
-          Page {pageNumber}
+        {/* Controls bar */}
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+          {/* Page number */}
+          {showPageNumber && (
+            <div className="px-2.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg text-xs font-medium text-muted-foreground border border-border">
+              Page {pageNumber}
+            </div>
+          )}
+
+          {/* Zoom controls */}
+          <div className="flex items-center gap-1 px-1.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg border border-border">
+            <button
+              onClick={zoomOut}
+              disabled={!canZoomOut}
+              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                canZoomOut
+                  ? "hover:bg-secondary text-foreground"
+                  : "text-muted-foreground/50 cursor-not-allowed"
+              }`}
+              aria-label="Zoom out"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+
+            <span className="min-w-[3rem] text-center text-xs font-medium text-foreground">
+              {zoomPercent}%
+            </span>
+
+            <button
+              onClick={zoomIn}
+              disabled={!canZoomIn}
+              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                canZoomIn
+                  ? "hover:bg-secondary text-foreground"
+                  : "text-muted-foreground/50 cursor-not-allowed"
+              }`}
+              aria-label="Zoom in"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {!isDefaultZoom && (
+              <button
+                onClick={resetZoom}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium hover:bg-secondary text-foreground transition-colors"
+                aria-label="Reset zoom"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={dataUrl}
-          alt={`Page ${pageNumber}`}
-          className="w-full h-auto md:max-h-[75vh] md:w-auto md:mx-auto"
-          style={{ maxWidth: "100%" }}
-        />
+
+        {/* Image container with zoom */}
+        <div className={`overflow-auto ${zoom > 1 ? "max-h-[80vh]" : ""}`}>
+          <div
+            className="transition-transform duration-200"
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: "top center",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={dataUrl}
+              alt={`Page ${pageNumber}`}
+              className="w-full h-auto"
+              style={{ maxWidth: "100%" }}
+            />
+          </div>
+        </div>
       </div>
+      
       {celebrities.length > 0 && (
         <div className="bg-secondary/50 border-t border-border px-5 py-4">
           <div className="flex items-center gap-2 mb-3">
@@ -127,8 +211,7 @@ function PageWithCelebrities({
             <p className="text-sm font-medium text-foreground">Detected in this image:</p>
           </div>
           <div className="flex flex-wrap gap-2 mb-4">
-            {celebrities
-            .map((celeb, idx) => (
+            {celebrities.map((celeb, idx) => (
               <Link
                 key={idx}
                 prefetch={false}
@@ -146,6 +229,7 @@ function PageWithCelebrities({
     </div>
   );
 }
+
 
 export default function FilePage({
   params,
