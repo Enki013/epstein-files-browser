@@ -130,6 +130,123 @@ function getCelebritiesForPage(filePath: string, pageNumber: number): { name: st
   return celebrities.sort((a, b) => b.confidence - a.confidence).filter(celeb => celeb.confidence > 99);
 }
 
+// Zoom levels for PDF pages
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+function ZoomablePage({ 
+  src, 
+  alt, 
+  pageNumber, 
+  showPageNumber,
+  children 
+}: { 
+  src: string; 
+  alt: string; 
+  pageNumber: number; 
+  showPageNumber: boolean;
+  children?: React.ReactNode; 
+}) {
+  const [zoomIndex, setZoomIndex] = useState(2); // Default 100%
+  const zoom = ZOOM_LEVELS[zoomIndex];
+  const zoomPercent = Math.round(zoom * 100);
+  
+  const zoomIn = () => setZoomIndex((prev) => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
+  const zoomOut = () => setZoomIndex((prev) => Math.max(prev - 1, 0));
+  const resetZoom = () => setZoomIndex(2);
+  
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
+  const canZoomOut = zoomIndex > 0;
+  const isDefaultZoom = zoomIndex === 2;
+
+  // Keyboard support for this specific page when focused or hovered could be tricky with multiple pages.
+  // We'll stick to button controls for now in the list view to avoid conflicts.
+
+  return (
+    <div className="bg-card rounded-2xl shadow-xl overflow-hidden border border-border">
+      <div className="relative">
+        {/* Controls bar */}
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+          {/* Page number */}
+          {showPageNumber && (
+            <div className="px-2.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg text-xs font-medium text-muted-foreground border border-border">
+              Page {pageNumber}
+            </div>
+          )}
+
+          {/* Zoom controls */}
+          <div className="flex items-center gap-1 px-1.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg border border-border">
+            <button
+              onClick={(e) => { e.stopPropagation(); zoomOut(); }}
+              disabled={!canZoomOut}
+              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                canZoomOut
+                  ? "hover:bg-secondary text-foreground"
+                  : "text-muted-foreground/50 cursor-not-allowed"
+              }`}
+              aria-label="Zoom out"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+
+            <span className="min-w-[3rem] text-center text-xs font-medium text-foreground">
+              {zoomPercent}%
+            </span>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); zoomIn(); }}
+              disabled={!canZoomIn}
+              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                canZoomIn
+                  ? "hover:bg-secondary text-foreground"
+                  : "text-muted-foreground/50 cursor-not-allowed"
+              }`}
+              aria-label="Zoom in"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {!isDefaultZoom && (
+              <button
+                onClick={(e) => { e.stopPropagation(); resetZoom(); }}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-sm font-medium hover:bg-secondary text-foreground transition-colors"
+                aria-label="Reset zoom"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Image container with zoom */}
+        <div className={`overflow-auto ${zoom > 1 ? "max-h-[80vh]" : ""}`}>
+          <div
+            className="transition-transform duration-200"
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: "top center",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={alt}
+              className="w-full h-auto"
+              style={{ maxWidth: "100%" }}
+            />
+          </div>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // Track in-progress prefetch operations to avoid duplicates
 const prefetchingSet = new Set<string>();
 
@@ -560,45 +677,38 @@ function FileModal({
             {pages.map((dataUrl, index) => {
               const pageCelebrities = getCelebritiesForPage(filePath, index + 1);
               return (
-                <div key={`${filePath}-${index}`} className="bg-card rounded-2xl shadow-xl overflow-hidden border border-border" onClick={(e) => e.stopPropagation()}>
-                  <div className="relative">
-                    {pages.length > 1 && (
-                      <div className="absolute top-3 left-3 px-2.5 py-1 bg-background/80 backdrop-blur-sm rounded-lg text-xs font-medium text-muted-foreground border border-border">
-                        Page {index + 1}
+                <div key={`${filePath}-${index}`} onClick={(e) => e.stopPropagation()}>
+                  <ZoomablePage
+                    src={dataUrl}
+                    alt={`Page ${index + 1}`}
+                    pageNumber={index + 1}
+                    showPageNumber={pages.length > 1}
+                  >
+                    {pageCelebrities.length > 0 && (
+                      <div className="bg-secondary/50 border-t border-border px-5 py-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                            <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-medium text-foreground">Detected in this image:</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {pageCelebrities.map((celeb, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-card border border-border text-foreground"
+                            >
+                              <span>{celeb.name}</span>
+                              <span className="text-xs text-muted-foreground">({Math.round(celeb.confidence)}%)</span>
+                            </span>
+                          ))}
+                        </div>
+                        <CelebrityDisclaimer />
                       </div>
                     )}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={dataUrl}
-                      alt={`Page ${index + 1}`}
-                      className="w-full h-auto md:max-h-[75vh] md:w-auto md:mx-auto"
-                      style={{ maxWidth: "100%" }}
-                    />
-                  </div>
-                  {pageCelebrities.length > 0 && (
-                    <div className="bg-secondary/50 border-t border-border px-5 py-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                          <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                        </div>
-                        <p className="text-sm font-medium text-foreground">Detected in this image:</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {pageCelebrities.map((celeb, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-card border border-border text-foreground"
-                          >
-                            <span>{celeb.name}</span>
-                            <span className="text-xs text-muted-foreground">({Math.round(celeb.confidence)}%)</span>
-                          </span>
-                        ))}
-                      </div>
-                      <CelebrityDisclaimer />
-                    </div>
-                  )}
+                  </ZoomablePage>
                 </div>
               );
             })}
